@@ -1,4 +1,3 @@
-
 import java.util.*;
 
 
@@ -6,72 +5,49 @@ public class Schedule {
 
 
     private ArrayList <Job> jobs = new ArrayList<>();;
-    private Map<Job, List<Job>> adjList = new HashMap<>();
-    private Map<Job, Integer> startTime = new HashMap<>();
-    private boolean cycleDetected = false;
+    private List<Job> cachedTopologicalOrder = null;
 
-    public Schedule() {
 
-    }
-    // Done, should work.
+    public Schedule() {}
+
     public Job insert(int time) {
 
-        if(time>=0) {
-            Job job = new Job(time);
-            jobs.add(job);
-            adjList.put(job, new ArrayList<>());
-            return job;
-        }
-        return null;
-
-
+        Job job = new Job(time);
+        jobs.add(job);
+        return job;
     }
-    // Done, should work.
+
     public Job get(int index) {
         return jobs.get(index);
     }
 
-
+    // First calls the TopOrder to get the topological order
+    // Then run a modified version of the DAG SSSP algorithm,  instead of calculating the shortest path  it calculates the longest path.
     public int finish() {
 
 
-        List<Job> sortedList = TopOrder(); // This should work.
+        List<Job> sortedList = TopOrder();
+        Map<Job, Integer> startTime = new HashMap<>();
+        int maxFinishTime = 0;
 
 
-        // This is the logic he mentioned in the video,it should work.
-        // Cycle Detection, returns -1 if detected.
-        if(sortedList.size() != adjList.size()) {
-            for (Job job : jobs) {
-                job.setStartTime(-1);
-            }
-            return -1;
-        }
+        if(sortedList.size() != jobs.size()  ||  sortedList == null ) {	return -1;	}
 
-        for (Job job : jobs) {
-            startTime.put(job, 0);
-        }
 
-        // relaxation shit.
-        //outer loop should work.
+        for (Job job : jobs) {	startTime.put(job, 0);	}
+
+
 
         for (Job job : sortedList) {
-            for (Job dep: adjList.get(job)) {
-                int newStartTime = startTime.get(job) + job.time;
-                if (newStartTime > startTime.get(dep)) {
 
-
-                    startTime.put(dep, newStartTime);
-
-                }
+            for (Job dep: job.outgoing) {
+                relax( startTime, job, dep);
             }
         }
-
-        int maxFinishTime = 0;
 
         for (Job job : jobs) {
 
             int finishTime = startTime.get(job) + job.time;
-            job.setStartTime(startTime.get(job));
 
             if (finishTime > maxFinishTime)
             {
@@ -82,13 +58,23 @@ public class Schedule {
 
         return maxFinishTime;
 
-
-
-
     }
 
-    // Done, should work flawlessly.
-    private List<Job> TopOrder() {
+    // Relaxation done in a private method, since its used multiple times
+    private void relax(Map<Job, Integer> startTime,Job job,Job dep) {
+        int newStartTime = startTime.get(job) + job.time;
+        if (newStartTime > startTime.get(dep)) {
+
+            startTime.put(dep, newStartTime);
+
+        }
+    }
+    // TopOrder() uses the Khan's Algorithm to calculate the topological order.
+    public List<Job> TopOrder() {
+
+        if (cachedTopologicalOrder != null) {
+            return cachedTopologicalOrder;
+        }
 
         Map<Job, Integer> inDegree = new HashMap<>();
         List<Job> topologicalSortedJobs = new ArrayList<>();
@@ -98,14 +84,14 @@ public class Schedule {
         for(Job job: jobs) {
             inDegree.put(job,0);
         }
-        // Done, works
-        // get the in degree
+
+        // Finding in-degree
         for(Job job: jobs) {
-            for(Job i: adjList.get(job)) {
+            for(Job i: job.outgoing) {
                 inDegree.put(i, inDegree.get(i) + 1);
             }
         }
-
+        // Storing jobs in inDegree zero in a queue.
         Queue<Job> queue = new LinkedList<>();
         for(Job job: jobs) {
             if(inDegree.get(job) == 0) {
@@ -118,7 +104,7 @@ public class Schedule {
             Job current = queue.remove();
             topologicalSortedJobs.add(current);
 
-            for(Job dep: adjList.get(current)) {
+            for(Job dep: current.outgoing) {
 
                 inDegree.put(dep, inDegree.get(dep)-1);
                 if(inDegree.get(dep) == 0) {
@@ -127,82 +113,62 @@ public class Schedule {
                 }
             }
         }
-        return topologicalSortedJobs;
+
+
+        cachedTopologicalOrder = topologicalSortedJobs;
+        return cachedTopologicalOrder;
 
 
     }
 
-
-
     public class Job{
 
         public int time;
-        public List<Job> preReq = new ArrayList<>();;
-        public int startTime = 0;
-
-
-
-
-        public void setStartTime(int s) {
-            this.startTime = s;
-        }
+        private List<Job> outgoing = new ArrayList<>();
 
         public Job(int time) {
             this.time = time;
-
         }
 
-        // Done, should work.
         public void requires(Job j) {
-            preReq.add(j);
-            adjList.get(j).add(this);
+            j.outgoing.add(this);
+            cachedTopologicalOrder = null;
+
         }
 
         public int start() {
 
 
-            return startTime;
+            List<Job> sortedList = TopOrder();
+            if(!sortedList.contains(this)) {	return -1;	}
+
+
+            return startHelper(this,sortedList);
+
+        }
+
+
+        public int startHelper(Job target, List<Job> sortedList) {
+
+            Map<Job, Integer> startTime = new HashMap<>();
+
+            for (Job job : jobs) {
+                startTime.put(job, 0);
+            }
+
+            for (Job job : sortedList) {
+
+
+                for (Job dependency: job.outgoing) {
+                    relax(startTime, job, dependency);
+                }
+                if (job == target) {
+                    return startTime.get(target);
+                }
+
+            }
+            return startTime.get(target);
         }
 
     }
-    public static void main(String[] args) {
-        // Create a new Schedule instance
-        Schedule schedule = new Schedule();
-
-        // Insert jobs with their respective completion times
-        Schedule.Job job0 = schedule.insert(8); // Job 0 takes 8 time units
-        Schedule.Job job1 = schedule.insert(3); // Job 1 takes 3 time units
-        Schedule.Job job2 = schedule.insert(5); // Job 2 takes 5 time units
-
-        // Set up job dependencies
-        job0.requires(job2); // Job 2 must finish before Job 0 can start
-        job0.requires(job1); // Job 1 must finish before Job 0 can start
-
-        // Display the initial finish time of the schedule
-        System.out.println("Initial finish time: " + schedule.finish()); // Should return 13
-
-        // Modify dependencies to introduce new conditions
-        job1.requires(job2); // Job 2 must finish before Job 1 can start
-        System.out.println("Updated finish time after adding new dependencies: " + schedule.finish()); // Should return 16
-
-        // Display the start times for each job
-        System.out.println("Start time for Job 0: " + job0.start()); // Should return 8
-        System.out.println("Start time for Job 1: " + job1.start()); // Should return 5
-        System.out.println("Start time for Job 2: " + job2.start()); // Should return 0
-
-        // Create a cycle for testing
-        job1.requires(job0); // This introduces a cycle
-        System.out.println("Finish time after introducing cycle: " + schedule.finish()); // Should return -1 (cycle detected)
-        System.out.println("Start time for Job 0 after introducing cycle: " + job0.start()); // Should return -1 (can't start due to cycle)
-        System.out.println("Start time for Job 1 after introducing cycle: " + job1.start()); // Should return -1 (can't start due to cycle)
-        System.out.println("Start time for Job 2 after introducing cycle: " + job2.start()); // Should return 0 (no cycle, can start)
-
-        // Additional test cases can be added here to further validate your implementation
-    }
-
-
-
-
-
-
 }
